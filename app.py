@@ -6,12 +6,10 @@ from telegram.ext import ContextTypes
 
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-# Функция для вычисления простого хеша изображения (MD5)
 def get_image_hash(file_path):
     with open(file_path, 'rb') as f:
         return hashlib.md5(f.read()).hexdigest()
 
-# Загружаем хеши всех эталонных фото при старте бота
 def load_reference_hashes(photos_dir='photos'):
     ref_hashes = {}
     if not os.path.exists(photos_dir):
@@ -26,18 +24,19 @@ def load_reference_hashes(photos_dir='photos'):
                     ref_hashes[category].append(get_image_hash(full_path))
     return ref_hashes
 
+# Загружаем хеши всех эталонных фото
 REF_HASHES = load_reference_hashes()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Привет! Я бот технадзора. Отправь фото.')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Получаем фото
+    # Скачиваем фото
     photo_file = await update.message.photo[-1].get_file()
     temp_path = f"/tmp/{photo_file.file_id}.jpg"
     await photo_file.download_to_drive(temp_path)
     
-    # Вычисляем хеш присланного фото
+    # Вычисляем хеш
     user_hash = get_image_hash(temp_path)
     
     # Ищем совпадение
