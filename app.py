@@ -25,7 +25,7 @@ def load_reference_hashes(photos_dir='photos'):
     return ref_hashes
 
 # Загружаем хеши всех эталонных фото
-REF_HASHES = load_reference_hashes()
+REF_HASHES = load_reference_hashes('.')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Привет! Я бот технадзора. Отправь фото.')
