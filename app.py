@@ -2,11 +2,19 @@ import os
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
-import imagehash
 from PIL import Image
 import tempfile
+import hashlib
 
 TOKEN = os.getenv('TELEGRAM_TOKEN')
+
+def get_phash(image_path):
+    """Простой перцептивный хеш через Pillow"""
+    img = Image.open(image_path).convert('L').resize((8, 8))
+    pixels = list(img.getdata())
+    avg = sum(pixels) / len(pixels)
+    bits = ''.join('1' if p > avg else '0' for p in pixels)
+    return int(bits, 2)
 
 def load_reference_hashes(photos_dir='.'):
     ref_hashes = {}
@@ -20,9 +28,8 @@ def load_reference_hashes(photos_dir='.'):
                 if fname.lower().endswith(('.jpg', '.jpeg', '.png')):
                     full_path = os.path.join(cat_path, fname)
                     try:
-                        img = Image.open(full_path)
-                        hash_val = imagehash.phash(img)
-                        ref_hashes[category].append(hash_val)
+                        h = get_phash(full_path)
+                        ref_hashes[category].append(h)
                     except:
                         continue
     return ref_hashes
@@ -39,25 +46,24 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         temp_path = f.name
     await photo_file.download_to_drive(temp_path)
     
-    # Вычисляем phash присланного фото
     try:
-        user_img = Image.open(temp_path)
-        user_hash = imagehash.phash(user_img)
+        user_hash = get_phash(temp_path)
     except:
         await update.message.reply_text('Не удалось обработать фото.')
         return
     
-    # Ищем похожее (допускаем отличие до 5 бит)
+    # Ищем похожее (чем меньше разница, тем лучше)
     found = None
-    min_diff = 10
+    best_diff = 100
     for category, hashes in REF_HASHES.items():
         for h in hashes:
-            diff = user_hash - h
-            if diff < min_diff:
-                min_diff = diff
+            diff = abs(user_hash - h)  # простейшее сравнение
+            if diff < best_diff:
+                best_diff = diff
                 found = category
     
-    if found and min_diff < 5:
+    # Порог чувствительности: 40 бит (можно подкрутить)
+    if found and best_diff < 40:
         await update.message.reply_text(f'Похоже на нарушение: {found}')
     else:
         await update.message.reply_text('Не удалось распознать нарушение. Попробуй другое фото.')
