@@ -12,7 +12,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Я тебя слышу, но фото пока не обрабатываю.")
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
+# Твой токен (читается из переменной окружения)
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+
+# Создаём приложение
+app = Application.builder().token(TOKEN).build()
 def main():
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -27,4 +33,4 @@ if __name__ == "__main__":
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    main(Commit changes)
