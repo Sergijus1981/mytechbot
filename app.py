@@ -1,6 +1,6 @@
 import os
 import hashlib
-import requests
+import urllib.request
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -8,10 +8,7 @@ from telegram.ext import ContextTypes
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 def download_file(url, dest_path):
-    r = requests.get(url, stream=True)
-    with open(dest_path, 'wb') as f:
-        for chunk in r.iter_content(chunk_size=8192):
-            f.write(chunk)
+    urllib.request.urlretrieve(url, dest_path)
 
 def get_md5(file_path):
     with open(file_path, 'rb') as f:
@@ -21,12 +18,15 @@ def load_reference_hashes(photos_dir='.'):
     ref_hashes = {}
     for category in os.listdir(photos_dir):
         cat_path = os.path.join(photos_dir, category)
-        if os.path.isdir(cat_path) and not category.startswith('.'):
+        if os.path.isdir(cat_path) and not category.startswith('.') and category not in ('__pycache__', '.git'):
             ref_hashes[category] = []
             for fname in os.listdir(cat_path):
                 if fname.lower().endswith(('.jpg', '.jpeg', '.png')):
                     full_path = os.path.join(cat_path, fname)
-                    ref_hashes[category].append(get_md5(full_path))
+                    try:
+                        ref_hashes[category].append(get_md5(full_path))
+                    except:
+                        continue
     return ref_hashes
 
 REF_HASHES = load_reference_hashes('.')
