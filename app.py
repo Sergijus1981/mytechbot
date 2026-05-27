@@ -32,5 +32,5 @@ if __name__ == "__main__":
     print("✅ Бот запущен и слушает сообщения...")
     app.run_polling()
 
-if __name__ == "__main__":
-    main(Commit changes)
+  if __name__ == '__main__':
+    app.run_polling()
