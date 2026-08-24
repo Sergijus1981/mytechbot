@@ -73,3 +73,18 @@ def main():
 
 if __name__ == '__main__':
     main()
+async def main():
+    app = Application.builder().token(TOKEN).build()
+    # Принудительно удаляем вебхук перед стартом
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    # ... остальное
+    async def main():
+    app = Application.builder().token(TOKEN).build()
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    app.add_handler(CommandHandler('start', start))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    await app.run_polling()
+
+if __name__ == '__main__':
+    import asyncio
+    asyncio.run(main())
