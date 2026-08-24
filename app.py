@@ -4,9 +4,6 @@ import urllib.request
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
-print(f"Загружено категорий: {len(REF_HASHES)}")
-for cat, hashes in REF_HASHES.items():
-    print(f"{cat}: {len(hashes)} хешей")
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 def download_file(url, dest_path):
@@ -34,7 +31,9 @@ def load_reference_hashes(photos_dir='.'):
 import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REF_HASHES = load_reference_hashes(os.path.join(BASE_DIR, '.'))
-
+print(f"Загружено категорий: {len(REF_HASHES)}")
+for cat, hashes in REF_HASHES.items():
+    print(f"{cat}: {len(hashes)} хешей")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Привет! Я бот технадзора. Отправь фото.')
 
