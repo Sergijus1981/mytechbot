@@ -4,7 +4,9 @@ import urllib.request
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
-
+print(f"Загружено категорий: {len(REF_HASHES)}")
+for cat, hashes in REF_HASHES.items():
+    print(f"{cat}: {len(hashes)} хешей")
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 
 def download_file(url, dest_path):
