@@ -29,7 +29,9 @@ def load_reference_hashes(photos_dir='.'):
                         continue
     return ref_hashes
 
-REF_HASHES = load_reference_hashes('.')
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+REF_HASHES = load_reference_hashes(os.path.join(BASE_DIR, '.'))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Привет! Я бот технадзора. Отправь фото.')
