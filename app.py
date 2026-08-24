@@ -2,26 +2,21 @@ import os
 import hashlib
 import tempfile
 import logging
-import asyncio
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
 
-# Логирование
 logging.basicConfig(level=logging.INFO)
 
-# Токен из переменных окружения
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 if not TOKEN:
     raise ValueError("TELEGRAM_TOKEN не установлен!")
 
 def get_md5(file_path):
-    """Вычисляет MD5-хеш файла."""
     with open(file_path, 'rb') as f:
         return hashlib.md5(f.read()).hexdigest()
 
 def load_reference_hashes(photos_dir='.'):
-    """Загружает хеши всех изображений в подпапках."""
     ref_hashes = {}
     for category in os.listdir(photos_dir):
         cat_path = os.path.join(photos_dir, category)
@@ -44,11 +39,9 @@ for cat, hashes in REF_HASHES.items():
     print(f"{cat}: {len(hashes)} хешей")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик команды /start."""
     await update.message.reply_text('Привет! Я бот технадзора. Отправь фото.')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик полученных фото."""
     try:
         file = await update.message.photo[-1].get_file()
         with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
@@ -67,15 +60,13 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logging.error(f"Ошибка при обработке фото: {e}")
         await update.message.reply_text('Произошла ошибка при обработке фото.')
 
-async def main():
-    """Главная функция запуска бота."""
+def main():
     app = Application.builder().token(TOKEN).build()
-    # Принудительно удаляем вебхук, чтобы избежать конфликтов
-    await app.bot.delete_webhook(drop_pending_updates=True)
     app.add_handler(CommandHandler('start', start))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     print("Бот запущен и слушает...")
-    await app.run_polling()
+    # drop_pending_updates=True сам удалит вебхук и сбросит конфликты
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
