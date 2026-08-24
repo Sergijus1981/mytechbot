@@ -1,10 +1,17 @@
 import os
 import hashlib
 import urllib.request
+import tempfile
+import logging
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
+
+logging.basicConfig(level=logging.INFO)
+
 TOKEN = os.getenv('TELEGRAM_TOKEN')
+if not TOKEN:
+    raise ValueError("TELEGRAM_TOKEN не установлен!")
 
 def download_file(url, dest_path):
     urllib.request.urlretrieve(url, dest_path)
@@ -28,27 +35,35 @@ def load_reference_hashes(photos_dir='.'):
                         continue
     return ref_hashes
 
-import os
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 REF_HASHES = load_reference_hashes(os.path.join(BASE_DIR, '.'))
+
+# Теперь print после определения REF_HASHES
 print(f"Загружено категорий: {len(REF_HASHES)}")
 for cat, hashes in REF_HASHES.items():
     print(f"{cat}: {len(hashes)} хешей")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text('Привет! Я бот технадзора. Отправь фото.')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await update.message.photo[-1].get_file()
-    temp_path = f"/tmp/{file.file_id}.jpg"
-    await file.download_to_drive(temp_path)
-    user_hash = get_md5(temp_path)
-    
-    for category, hashes in REF_HASHES.items():
-        if user_hash in hashes:
-            await update.message.reply_text(f'Найдено совпадение: {category}')
-            return
-    
-    await update.message.reply_text('Не найдено совпадений.')
+    try:
+        file = await update.message.photo[-1].get_file()
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+            temp_path = tmp.name
+        await file.download_to_drive(temp_path)
+        user_hash = get_md5(temp_path)
+        os.remove(temp_path)
+
+        for category, hashes in REF_HASHES.items():
+            if user_hash in hashes:
+                await update.message.reply_text(f'Найдено совпадение: {category}')
+                return
+
+        await update.message.reply_text('Не найдено совпадений.')
+    except Exception as e:
+        logging.error(f"Ошибка: {e}")
+        await update.message.reply_text('Произошла ошибка при обработке фото.')
 
 def main():
     app = Application.builder().token(TOKEN).build()
