@@ -1,4 +1,18 @@
+
 import os
+
+# ===== ДИАГНОСТИКА =====
+print("📂 Проверяем файлы на сервере...")
+print("Текущая директория:", os.getcwd())
+print("Файлы и папки:", os.listdir("."))
+if os.path.exists("photo_db"):
+    print(f"✅ photo_db найдена, файлов: {len(os.listdir('photo_db'))}")
+    if len(os.listdir("photo_db")) > 0:
+        print("Первые 5 файлов:", os.listdir("photo_db")[:5])
+    else:
+        print("⚠️ photo_db пуста!")
+else:
+    print("❌ photo_db НЕ найдена!")
 import pickle
 import numpy as np
 import faiss
