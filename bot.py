@@ -101,4 +101,10 @@ if __name__ == "__main__":
     app = Application.builder().token(TOKEN).read_timeout(60).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     print("🚀 Бот запущен. Ожидаю фото... (модель и индекс загрузятся при первом запросе)")
+    import os
+print("Содержимое текущей папки:", os.listdir("."))
+if os.path.exists("photo_db"):
+    print("photo_db найдена, количество файлов:", len(os.listdir("photo_db")))
+else:
+    print("photo_db НЕ найдена!")
     app.run_polling()
