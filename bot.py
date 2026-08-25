@@ -10,18 +10,31 @@ from torchvision import transforms
 from ultralytics import YOLO
 
 # ===== КОНФИГ =====
-TOKEN = os.getenv("TOKEN", "8917838537:AAFo6imCSXHB82tpZeJ7wU5qlyjDz-7dOZY")
+TOKEN = os.getenv("TOKEN", "8997588392:AAGYVTsjK0n9JYKMIYPTF-FAFhVhbUY1SzE")
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
-MODEL_PATH = "yolov8n-cls.pt"   # можно заменить на "best.pt" если есть
+MODEL_PATH = "yolov8n-cls.pt"
 
-# Глобальные переменные для ленивой загрузки
+# Глобальные переменные
 index = None
 image_paths = None
 embedder = None
 transform = None
 
-# ===== ЛЕНИВАЯ ЗАГРУЗКА ИНДЕКСА =====
+# ===== ДИАГНОСТИКА ПРИ СТАРТЕ =====
+print("📂 Проверяем файлы на сервере...")
+print("Текущая директория:", os.getcwd())
+print("Файлы и папки:", os.listdir("."))
+if os.path.exists("photo_db"):
+    print(f"✅ photo_db найдена, файлов: {len(os.listdir('photo_db'))}")
+    if len(os.listdir("photo_db")) > 0:
+        print("Первые 5 файлов:", os.listdir("photo_db")[:5])
+    else:
+        print("⚠️ photo_db пуста!")
+else:
+    print("❌ photo_db НЕ найдена!")
+
+# ===== ЗАГРУЗКА ИНДЕКСА =====
 def load_index():
     global index, image_paths
     if index is None:
@@ -31,23 +44,21 @@ def load_index():
             image_paths = pickle.load(f)
         print(f"Индекс загружен, {len(image_paths)} изображений.")
 
-# ===== ЛЕНИВАЯ ЗАГРУЗКА МОДЕЛИ =====
+# ===== ЗАГРУЗКА МОДЕЛИ =====
 def load_model():
     global embedder, transform
     if embedder is None:
         print("Загружаю модель...")
         model = YOLO(MODEL_PATH)
-        # Отрезаем классификатор
         torch_model = model.model.model
         embedder = torch.nn.Sequential(*list(torch_model.children())[:-1])
         embedder.eval()
-        print("Модель загружена.")
-
         transform = transforms.Compose([
             transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
         ])
+        print("Модель загружена.")
 
 def get_embedding(image_path):
     img = Image.open(image_path).convert('RGB')
@@ -59,10 +70,8 @@ def get_embedding(image_path):
 # ===== ОБРАБОТЧИК =====
 async def handle_photo(update, context):
     try:
-        # Убедимся, что индекс и модель загружены (лениво)
         load_index()
         load_model()
-
         photo = update.message.photo[-1]
         file = await photo.get_file()
         user_path = f"temp_{update.message.chat.id}.jpg"
@@ -87,7 +96,9 @@ async def handle_photo(update, context):
                 continue
             sim = 1 / (1 + distances[0][i])
             caption = f"#{i+1} Схожесть: {sim*100:.1f}%"
-            # Отправляем фото из папки photo_db (она должна быть в репозитории)
+            if not os.path.exists(image_paths[idx]):
+                await update.message.reply_text(f"❌ Файл {image_paths[idx]} не найден на сервере!")
+                continue
             with open(image_paths[idx], 'rb') as f:
                 await update.message.reply_photo(photo=f, caption=caption)
 
@@ -97,14 +108,7 @@ async def handle_photo(update, context):
 
 # ===== ЗАПУСК =====
 if __name__ == "__main__":
-    # Ничего не загружаем при старте, только создаём приложение
     app = Application.builder().token(TOKEN).read_timeout(60).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     print("🚀 Бот запущен. Ожидаю фото... (модель и индекс загрузятся при первом запросе)")
-    import os
-print("Содержимое текущей папки:", os.listdir("."))
-if os.path.exists("photo_db"):
-    print("photo_db найдена, количество файлов:", len(os.listdir("photo_db")))
-else:
-    print("photo_db НЕ найдена!")
     app.run_polling()
