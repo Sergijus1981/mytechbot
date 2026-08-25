@@ -1,0 +1,10 @@
+telegram
+python-telegram-bot
+ultralytics
+faiss-cpu
+pillow
+numpy
+torch
+torchvision
+requests
+ydisk-downloader
