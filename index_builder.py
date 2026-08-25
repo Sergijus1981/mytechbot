@@ -10,7 +10,7 @@ from ultralytics import YOLO
 
 # ===== НАСТРОЙКИ =====
 DB_PATH = "photo_db"
-MODEL_PATH = r"C:\Users\ЗС\OneDrive\Desktop\TechBotFinal\yolov8n-cls.pt"
+MODEL_PATH = "yolov8n-cls.pt"
 # ===== ЗАГРУЗКА МОДЕЛИ =====
 print("Загружаем модель...")
 model = YOLO(MODEL_PATH)
