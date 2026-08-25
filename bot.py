@@ -10,7 +10,7 @@ from torchvision import transforms
 from ultralytics import YOLO
 
 # ===== КОНФИГ =====
-TOKEN = os.getenv("TOKEN", "8917838537:AAHm8tzHuNRbX5_CaRNKxqQl9o_Nj-p7U1E")
+TOKEN = os.getenv("TOKEN", "8917838537:AAFo6imCSXHB82tpZeJ7wU5qlyjDz-7dOZY")
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"   # можно заменить на "best.pt" если есть
