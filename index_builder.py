@@ -9,7 +9,7 @@ from torchvision import transforms
 from ultralytics import YOLO
 
 # ===== НАСТРОЙКИ =====
-DB_PATH = r"C:\Users\ЗС\OneDrive\Desktop\TechBotFinal\photo_db"
+DB_PATH = "photo_db"
 MODEL_PATH = r"C:\Users\ЗС\OneDrive\Desktop\TechBotFinal\yolov8n-cls.pt"
 # ===== ЗАГРУЗКА МОДЕЛИ =====
 print("Загружаем модель...")
