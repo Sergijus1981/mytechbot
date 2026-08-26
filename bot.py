@@ -18,13 +18,21 @@ INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
 
+# Словарь замечаний по префиксам
+CATEGORY_MAP = {
+    "01_otsutstvuyut_birki": "⚠️ Отсутствуют бирки на оборудовании",
+    "02_zadelka_prohodok": "⚠️ Не выполнена заделка проходок",
+    "03_zazemlenie_ne_vypolneno": "⚠️ Не выполнено заземление",
+    "04_shpilki_lotka_ne_srezany": "⚠️ Шпильки лотка не срезаны",
+}
+
 # Глобальные переменные
 index = None
 image_paths = None
 embedder = None
 transform = None
 
-# ===== АВТОЗАГРУЗКА ФОТО (ТОЛЬКО ЕСЛИ НЕТ ПАПКИ) =====
+# ===== АВТОЗАГРУЗКА ФОТО =====
 def download_and_extract_photos():
     if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
         print("📁 photo_db уже существует, пропускаю загрузку.")
@@ -38,7 +46,6 @@ def download_and_extract_photos():
         zip_ref.extractall(".")
     os.remove("photo_db.zip")
 
-    # Убеждаемся, что папка называется photo_db
     if not os.path.exists("photo_db"):
         for item in os.listdir("."):
             if os.path.isdir(item) and item.startswith("photo_db"):
@@ -52,17 +59,20 @@ def download_and_extract_photos():
 
     print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")
 
-# ===== ЗАГРУЗКА ИНДЕКСА (без перестроения) =====
+# ===== ЗАГРУЗКА ИНДЕКСА =====
 def load_index():
     global index, image_paths
     if index is None:
         print("Загружаю индекс...")
         index = faiss.read_index(INDEX_PATH)
         with open(PATHS_PATH, "rb") as f:
-            image_paths = pickle.load(f)
+            raw_paths = pickle.load(f)
+
+        # Исправляем пути: только имя файла
+        image_paths = [os.path.join("photo_db", os.path.basename(p)) for p in raw_paths]
         print(f"Индекс загружен, {len(image_paths)} изображений.")
 
-# ===== ЗАГРУЗКА МОДЕЛИ (при первом запросе) =====
+# ===== ЗАГРУЗКА МОДЕЛИ =====
 def load_model():
     global embedder, transform
     if embedder is None:
@@ -85,11 +95,19 @@ def get_embedding(image_path):
         emb = embedder(img_tensor).flatten().cpu().numpy()
     return emb
 
-# ===== ОБРАБОТЧИК =====
+def get_category(filename):
+    """Извлекает категорию из имени файла"""
+    for prefix, text in CATEGORY_MAP.items():
+        if filename.startswith(prefix):
+            return text
+    return "📌 Замечание не распознано"
+
+# ===== ОБРАБОТЧИК (ТОЛЬКО ТЕКСТ) =====
 async def handle_photo(update, context):
     try:
         load_index()
         load_model()
+
         photo = update.message.photo[-1]
         file = await photo.get_file()
         user_path = f"temp_{update.message.chat.id}.jpg"
@@ -100,36 +118,46 @@ async def handle_photo(update, context):
         os.remove(user_path)
 
         emb = np.array([emb]).astype('float32')
-        k = 5
-        distances, indices = index.search(emb, k)
+        distances, indices = index.search(emb, 1)  # ищем только одно самое похожее
 
         if len(indices[0]) == 0 or indices[0][0] == -1:
-            await update.message.reply_text("Похожих фото не найдено.")
+            await update.message.reply_text("❌ Не удалось найти похожее изображение.")
             return
 
-        await update.message.reply_text(f"🔍 Нашёл {len(indices[0])} похожих фото:")
+        idx = indices[0][0]
+        similarity = 1 / (1 + distances[0][0])  # преобразуем расстояние в проценты
+        similarity_percent = similarity * 100
 
-        for i, idx in enumerate(indices[0]):
-            if idx == -1:
-                continue
-            sim = 1 / (1 + distances[0][i])
-            caption = f"#{i+1} Схожесть: {sim*100:.1f}%"
-            path = os.path.normpath(image_paths[idx])
-            if not os.path.exists(path):
-                await update.message.reply_text(f"❌ Файл {path} не найден на сервере!")
-                continue
-            with open(path, 'rb') as f:
-                await update.message.reply_photo(photo=f, caption=caption)
+        # Получаем имя файла из исправленного пути
+        filename = os.path.basename(image_paths[idx])
+        category_text = get_category(filename)
+
+        # Формируем ответ
+        if similarity_percent < 50:
+            await update.message.reply_text(
+                f"⚠️ Совпадение низкое ({similarity_percent:.1f}%).\n"
+                f"Возможно, замечание не соответствует фото."
+            )
+            return
+
+        response = (
+            f"🔍 **Найдено замечание:**\n"
+            f"{category_text}\n\n"
+            f"📊 Схожесть: {similarity_percent:.1f}%\n"
+            f"📄 Образец: {filename}"
+        )
+        await update.message.reply_text(response)
 
     except Exception as e:
         print(f"Ошибка: {e}")
-        await update.message.reply_text(f"Ошибка: {e}")
+        await update.message.reply_text(f"❌ Ошибка: {e}")
 
 # ===== ЗАПУСК =====
 if __name__ == "__main__":
     download_and_extract_photos()
     load_index()
-    load_model()  # модель загружается сразу, но мы можем загружать лениво — оставляем как есть для простоты
+    load_model()
+
     app = Application.builder().token(TOKEN).read_timeout(60).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     print("🚀 Бот запущен. Ожидаю фото...")
