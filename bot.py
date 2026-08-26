@@ -18,6 +18,11 @@ PHOTO_DB_URL = "https://drive.google.com/uc?export=download&id=1oZwqT2bQRy5C17U0
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
+# Глобальные переменные
+index = None
+image_paths = None
+embedder = None
+transform = None
 
 # ===== АВТОЗАГРУЗКА ФОТО =====
 def download_and_extract_photos():
