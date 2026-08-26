@@ -1,19 +1,7 @@
-
 import os
-
-# ===== ДИАГНОСТИКА =====
-print("📂 Проверяем файлы на сервере...")
-print("Текущая директория:", os.getcwd())
-print("Файлы и папки:", os.listdir("."))
-if os.path.exists("photo_db"):
-    print(f"✅ photo_db найдена, файлов: {len(os.listdir('photo_db'))}")
-    if len(os.listdir("photo_db")) > 0:
-        print("Первые 5 файлов:", os.listdir("photo_db")[:5])
-    else:
-        print("⚠️ photo_db пуста!")
-else:
-    print("❌ photo_db НЕ найдена!")
 import pickle
+import zipfile
+import requests
 import numpy as np
 import faiss
 from telegram import Update
@@ -24,29 +12,40 @@ from torchvision import transforms
 from ultralytics import YOLO
 
 # ===== КОНФИГ =====
-TOKEN = os.getenv("TOKEN", "8997588392:AAGYVTsjK0n9JYKMIYPTF-FAFhVhbUY1SzE")
+TOKEN = "8997588392:AAGYVTsjK0n9JYKMIYPTF-FAFhVhbUY1SzE"
+PHOTO_DB_URL = "https://downloader.disk.yandex.ru/disk/979af3bcf7fdc18268299893cee152fd5e8e53328d647ccc73b2e1c406cfa972/6a8e6b0a/lLyQRxO4FrZ5g2a6h2xteSFsybKo2n9CS6U-h2n_eQJEJlaawNXHIigWwGTV8v77MsWbJ3PJAQ975bfH0EI_bw%3D%3D?uid=0&filename=photo_db.zip&disposition=attachment&hash=3WwzMRDFxbTaNl7f0ZsXA5T4%2BejOM1Tvs3aoK%2BhrD1GT/hoQwD8TAHAUw4vwAMJnq/J6bpmRyOJonT3VoXnDag%3D%3D%3A&limit=0&content_type=application%2Fzip&owner_uid=244042575&fsize=94926167&hid=f9c0a1f581e2ad42ada0d308805ba3b0&media_type=compressed&tknv=v3&is_direct_zip_experiment=1"
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
 
-# Глобальные переменные
-index = None
-image_paths = None
-embedder = None
-transform = None
+# ===== АВТОЗАГРУЗКА ФОТО =====
+def download_and_extract_photos():
+    if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
+        print("📁 photo_db уже существует, пропускаю загрузку.")
+        return
 
-# ===== ДИАГНОСТИКА ПРИ СТАРТЕ =====
-print("📂 Проверяем файлы на сервере...")
-print("Текущая директория:", os.getcwd())
-print("Файлы и папки:", os.listdir("."))
-if os.path.exists("photo_db"):
-    print(f"✅ photo_db найдена, файлов: {len(os.listdir('photo_db'))}")
-    if len(os.listdir("photo_db")) > 0:
-        print("Первые 5 файлов:", os.listdir("photo_db")[:5])
-    else:
-        print("⚠️ photo_db пуста!")
-else:
-    print("❌ photo_db НЕ найдена!")
+    print("📥 Скачиваю архив с фото...")
+    response = requests.get(PHOTO_DB_URL, stream=True)
+    with open("photo_db.zip", "wb") as f:
+        for chunk in response.iter_content(chunk_size=8192):
+            f.write(chunk)
+
+    print("📦 Распаковываю...")
+    with zipfile.ZipFile("photo_db.zip", "r") as zip_ref:
+        zip_ref.extractall(".")
+    os.remove("photo_db.zip")
+    print("✅ Фото готовы.")
+
+# ===== ПОСТРОЕНИЕ ИНДЕКСА =====
+def build_index():
+    if os.path.exists(INDEX_PATH) and os.path.exists(PATHS_PATH):
+        print("📂 Индекс уже существует, пропускаю.")
+        return
+
+    print("🔨 Строю индекс...")
+    import subprocess
+    subprocess.run(["python", "index_builder.py"], check=True)
+    print("✅ Индекс построен.")
 
 # ===== ЗАГРУЗКА ИНДЕКСА =====
 def load_index():
@@ -110,10 +109,11 @@ async def handle_photo(update, context):
                 continue
             sim = 1 / (1 + distances[0][i])
             caption = f"#{i+1} Схожесть: {sim*100:.1f}%"
-            if not os.path.exists(image_paths[idx]):
-                await update.message.reply_text(f"❌ Файл {image_paths[idx]} не найден на сервере!")
+            path = os.path.normpath(image_paths[idx])
+            if not os.path.exists(path):
+                await update.message.reply_text(f"❌ Файл {path} не найден на сервере!")
                 continue
-            with open(image_paths[idx], 'rb') as f:
+            with open(path, 'rb') as f:
                 await update.message.reply_photo(photo=f, caption=caption)
 
     except Exception as e:
@@ -122,7 +122,13 @@ async def handle_photo(update, context):
 
 # ===== ЗАПУСК =====
 if __name__ == "__main__":
+    # Подготовка перед запуском бота
+    download_and_extract_photos()
+    build_index()
+    load_index()
+    load_model()
+
     app = Application.builder().token(TOKEN).read_timeout(60).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    print("🚀 Бот запущен. Ожидаю фото... (модель и индекс загрузятся при первом запросе)")
+    print("🚀 Бот запущен. Ожидаю фото...")
     app.run_polling()
