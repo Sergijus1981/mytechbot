@@ -1,7 +1,6 @@
 import os
 import pickle
 import zipfile
-import requests
 import gdown
 import numpy as np
 import faiss
@@ -25,7 +24,7 @@ image_paths = None
 embedder = None
 transform = None
 
-# ===== АВТОЗАГРУЗКА ФОТО =====
+# ===== АВТОЗАГРУЗКА ФОТО (ТОЛЬКО ЕСЛИ НЕТ ПАПКИ) =====
 def download_and_extract_photos():
     if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
         print("📁 photo_db уже существует, пропускаю загрузку.")
@@ -39,10 +38,7 @@ def download_and_extract_photos():
         zip_ref.extractall(".")
     os.remove("photo_db.zip")
 
-    # Проверяем, что появилось
-    print("Содержимое после распаковки:", os.listdir("."))
-
-    # Если появилась папка с другим именем — переименовываем
+    # Убеждаемся, что папка называется photo_db
     if not os.path.exists("photo_db"):
         for item in os.listdir("."):
             if os.path.isdir(item) and item.startswith("photo_db"):
@@ -56,19 +52,7 @@ def download_and_extract_photos():
 
     print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")
 
-# ===== ПОСТРОЕНИЕ ИНДЕКСА (ПРИНУДИТЕЛЬНОЕ) =====
-def build_index():
-    # Удаляем старые файлы индекса, чтобы пересоздать с правильными путями
-    if os.path.exists(INDEX_PATH):
-        os.remove(INDEX_PATH)
-    if os.path.exists(PATHS_PATH):
-        os.remove(PATHS_PATH)
-    print("🔨 Строю индекс заново...")
-    import subprocess
-    subprocess.run(["python", "index_builder.py"], check=True)
-    print("✅ Индекс построен.")
-
-# ===== ЗАГРУЗКА ИНДЕКСА =====
+# ===== ЗАГРУЗКА ИНДЕКСА (без перестроения) =====
 def load_index():
     global index, image_paths
     if index is None:
@@ -78,7 +62,7 @@ def load_index():
             image_paths = pickle.load(f)
         print(f"Индекс загружен, {len(image_paths)} изображений.")
 
-# ===== ЗАГРУЗКА МОДЕЛИ =====
+# ===== ЗАГРУЗКА МОДЕЛИ (при первом запросе) =====
 def load_model():
     global embedder, transform
     if embedder is None:
@@ -144,10 +128,8 @@ async def handle_photo(update, context):
 # ===== ЗАПУСК =====
 if __name__ == "__main__":
     download_and_extract_photos()
-    build_index()
     load_index()
-    load_model()
-
+    load_model()  # модель загружается сразу, но мы можем загружать лениво — оставляем как есть для простоты
     app = Application.builder().token(TOKEN).read_timeout(60).build()
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     print("🚀 Бот запущен. Ожидаю фото...")
