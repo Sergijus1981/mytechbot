@@ -16,7 +16,7 @@ TOKEN = "8216393055:AAF6sbjxic7y9tpMN-yKGTNagAEqnszhL8U"
 PHOTO_DB_URL = "https://dl.dropboxusercontent.com/scl/fi/xxl7bna8h3re0ks9jdsy6/photo_db.zip?rlkey=j94j0yuv1e3sg67txyzda4zo9&dl=1"
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
-MODEL_PATH = "yolov8n-cls.pt"
+MODEL_PATH = "best.pt"
 
 # Словарь замечаний по префиксам
 CATEGORY_MAP = {
