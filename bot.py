@@ -13,22 +13,19 @@ from ultralytics import YOLO
 
 # ===== КОНФИГ =====
 TOKEN = "8997588392:AAGYVTsjK0n9JYKMIYPTF-FAFhVhbUY1SzE"
-PHOTO_DB_URL = "https://drive.google.com/uc?export=download&id=1oZwqT2bQRy5C17U0ZYc2cpvg37R461Y7&confirm=1"
-INDEX_PATH = "faiss_index.bin"
-PATHS_PATH = "image_paths.pkl"
+PHOTO_DB_URL = "https://drive.google.com/uc?export=download&id=1oZwqT2bQRy5C17U0ZYc2cpvg37R461Y7"PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
 
 # ===== АВТОЗАГРУЗКА ФОТО =====
+import gdown  # добавь этот импорт в начале файла
+
 def download_and_extract_photos():
     if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
         print("📁 photo_db уже существует, пропускаю загрузку.")
         return
 
-    print("📥 Скачиваю архив с фото...")
-    response = requests.get(PHOTO_DB_URL, stream=True)
-    with open("photo_db.zip", "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
+    print("📥 Скачиваю архив с фото через gdown...")
+    gdown.download(PHOTO_DB_URL, "photo_db.zip", quiet=False)
 
     print("📦 Распаковываю...")
     with zipfile.ZipFile("photo_db.zip", "r") as zip_ref:
