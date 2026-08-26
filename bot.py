@@ -14,10 +14,15 @@ from ultralytics import YOLO
 
 # ===== КОНФИГ =====
 TOKEN = "8997588392:AAGYVTsjK0n9JYKMIYPTF-FAFhVhbUY1SzE"
-PHOTO_DB_URL = "https://drive.google.com/uc?export=download&id=1oZwqT2bQRy5C17U0ZYc2cpvg37R461Y7"
+PHOTO_DB_URL = "https://transfiles.ru/getFile/e3htn"
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
+# Глобальные переменные
+index = None
+image_paths = None
+embedder = None
+transform = None
 
 # ===== АВТОЗАГРУЗКА ФОТО =====
 def download_and_extract_photos():
@@ -32,9 +37,27 @@ def download_and_extract_photos():
     with zipfile.ZipFile("photo_db.zip", "r") as zip_ref:
         zip_ref.extractall(".")
     os.remove("photo_db.zip")
-    print("✅ Фото готовы.")
 
-# ===== ПОСТРОЕНИЕ ИНДЕКСА =====
+    # Проверяем, что появилось
+    print("Содержимое после распаковки:", os.listdir("."))
+
+    # Если появилась папка `photo_db` — оставляем как есть.
+    # Если появилась папка с другим именем (например, `photo_db-...`) — переименовываем.
+    if not os.path.exists("photo_db"):
+        # Если есть папка, которая начинается с `photo_db` — переименовываем.
+        for item in os.listdir("."):
+            if os.path.isdir(item) and item.startswith("photo_db"):
+                os.rename(item, "photo_db")
+                break
+        else:
+            # Если папки нет — возможно, файлы распаковались прямо в корень.
+            # Тогда создаём папку и перемещаем все изображения туда.
+            os.mkdir("photo_db")
+            for f in os.listdir("."):
+                if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    os.rename(f, os.path.join("photo_db", f))
+
+    print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")# ===== ПОСТРОЕНИЕ ИНДЕКСА =====
 def build_index():
     if os.path.exists(INDEX_PATH) and os.path.exists(PATHS_PATH):
         print("📂 Индекс уже существует, пропускаю.")
