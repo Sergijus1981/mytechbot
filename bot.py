@@ -13,7 +13,7 @@ from ultralytics import YOLO
 
 # ===== КОНФИГ =====
 TOKEN = "8997588392:AAGYVTsjK0n9JYKMIYPTF-FAFhVhbUY1SzE"
-PHOTO_DB_URL = "https://downloader.disk.yandex.ru/disk/979af3bcf7fdc18268299893cee152fd5e8e53328d647ccc73b2e1c406cfa972/6a8e6b0a/lLyQRxO4FrZ5g2a6h2xteSFsybKo2n9CS6U-h2n_eQJEJlaawNXHIigWwGTV8v77MsWbJ3PJAQ975bfH0EI_bw%3D%3D?uid=0&filename=photo_db.zip&disposition=attachment&hash=3WwzMRDFxbTaNl7f0ZsXA5T4%2BejOM1Tvs3aoK%2BhrD1GT/hoQwD8TAHAUw4vwAMJnq/J6bpmRyOJonT3VoXnDag%3D%3D%3A&limit=0&content_type=application%2Fzip&owner_uid=244042575&fsize=94926167&hid=f9c0a1f581e2ad42ada0d308805ba3b0&media_type=compressed&tknv=v3&is_direct_zip_experiment=1"
+PHOTO_DB_URL = "https://drive.google.com/uc?export=download&id=1oZwqT2bQRy5C17U0ZYc2cpvg37R461Y7"
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
