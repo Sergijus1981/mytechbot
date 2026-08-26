@@ -18,6 +18,7 @@ PHOTO_DB_URL = "https://dl.dropboxusercontent.com/scl/fi/xxl7bna8h3re0ks9jdsy6/p
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "yolov8n-cls.pt"
+
 # Глобальные переменные
 index = None
 image_paths = None
@@ -41,29 +42,28 @@ def download_and_extract_photos():
     # Проверяем, что появилось
     print("Содержимое после распаковки:", os.listdir("."))
 
-    # Если появилась папка `photo_db` — оставляем как есть.
-    # Если появилась папка с другим именем (например, `photo_db-...`) — переименовываем.
+    # Если появилась папка с другим именем — переименовываем
     if not os.path.exists("photo_db"):
-        # Если есть папка, которая начинается с `photo_db` — переименовываем.
         for item in os.listdir("."):
             if os.path.isdir(item) and item.startswith("photo_db"):
                 os.rename(item, "photo_db")
                 break
         else:
-            # Если папки нет — возможно, файлы распаковались прямо в корень.
-            # Тогда создаём папку и перемещаем все изображения туда.
             os.mkdir("photo_db")
             for f in os.listdir("."):
                 if f.lower().endswith(('.jpg', '.jpeg', '.png')):
                     os.rename(f, os.path.join("photo_db", f))
 
-    print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")# ===== ПОСТРОЕНИЕ ИНДЕКСА =====
-def build_index():
-    if os.path.exists(INDEX_PATH) and os.path.exists(PATHS_PATH):
-        print("📂 Индекс уже существует, пропускаю.")
-        return
+    print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")
 
-    print("🔨 Строю индекс...")
+# ===== ПОСТРОЕНИЕ ИНДЕКСА (ПРИНУДИТЕЛЬНОЕ) =====
+def build_index():
+    # Удаляем старые файлы индекса, чтобы пересоздать с правильными путями
+    if os.path.exists(INDEX_PATH):
+        os.remove(INDEX_PATH)
+    if os.path.exists(PATHS_PATH):
+        os.remove(PATHS_PATH)
+    print("🔨 Строю индекс заново...")
     import subprocess
     subprocess.run(["python", "index_builder.py"], check=True)
     print("✅ Индекс построен.")
