@@ -16,9 +16,8 @@ TOKEN = "8216393055:AAF6sbjxic7y9tpMN-yKGTNagAEqnszhL8U"
 PHOTO_DB_URL = "https://dl.dropboxusercontent.com/scl/fi/xxl7bna8h3re0ks9jdsy6/photo_db.zip?rlkey=j94j0yuv1e3sg67txyzda4zo9&dl=1"
 INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
-MODEL_PATH = "best.pt"
+MODEL_PATH = "best.pt"  # используем обученную модель
 
-# Словарь замечаний по префиксам
 CATEGORY_MAP = {
     "01_otsutstvuyut_birki": "⚠️ Отсутствуют бирки на оборудовании",
     "02_zadelka_prohodok": "⚠️ Не выполнена заделка проходок",
@@ -26,7 +25,6 @@ CATEGORY_MAP = {
     "04_shpilki_lotka_ne_srezany": "⚠️ Шпильки лотка не срезаны",
 }
 
-# Глобальные переменные
 index = None
 image_paths = None
 embedder = None
@@ -67,8 +65,6 @@ def load_index():
         index = faiss.read_index(INDEX_PATH)
         with open(PATHS_PATH, "rb") as f:
             raw_paths = pickle.load(f)
-
-        # Исправляем пути: только имя файла
         image_paths = [os.path.join("photo_db", os.path.basename(p)) for p in raw_paths]
         print(f"Индекс загружен, {len(image_paths)} изображений.")
 
@@ -96,13 +92,12 @@ def get_embedding(image_path):
     return emb
 
 def get_category(filename):
-    """Извлекает категорию из имени файла"""
     for prefix, text in CATEGORY_MAP.items():
         if filename.startswith(prefix):
             return text
     return "📌 Замечание не распознано"
 
-# ===== ОБРАБОТЧИК (ТОЛЬКО ТЕКСТ) =====
+# ===== ОБРАБОТЧИК (всегда выдаёт замечание) =====
 async def handle_photo(update, context):
     try:
         load_index()
@@ -125,20 +120,11 @@ async def handle_photo(update, context):
             return
 
         idx = indices[0][0]
-        similarity = 1 / (1 + distances[0][0])  # преобразуем расстояние в проценты
+        similarity = 1 / (1 + distances[0][0])
         similarity_percent = similarity * 100
 
-        # Получаем имя файла из исправленного пути
         filename = os.path.basename(image_paths[idx])
         category_text = get_category(filename)
-
-        # Формируем ответ
-        if similarity_percent < 50:
-            await update.message.reply_text(
-                f"⚠️ Совпадение низкое ({similarity_percent:.1f}%).\n"
-                f"Возможно, замечание не соответствует фото."
-            )
-            return
 
         response = (
             f"🔍 **Найдено замечание:**\n"
