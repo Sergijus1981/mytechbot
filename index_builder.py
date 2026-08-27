@@ -8,24 +8,17 @@ from PIL import Image
 from torchvision import transforms
 from ultralytics import YOLO
 
-# ===== НАСТРОЙКИ =====
-DB_PATH = "photo_db"
-MODEL_PATH = "yolov8n-cls.pt"
+# ===== НАСТРОЙКИ (относительные пути) =====
+DB_PATH = "photo_db"                     # папка с фото в той же директории
+MODEL_PATH = "yolov8n-cls.pt"            # модель рядом со скриптом
+
 # ===== ЗАГРУЗКА МОДЕЛИ =====
 print("Загружаем модель...")
 model = YOLO(MODEL_PATH)
 
-# Получаем PyTorch модель без последнего слоя (классификатора)
-# Для YOLOv8-cls модель состоит из backbone и головы. Мы отрежем голову.
-if hasattr(model, 'model') and hasattr(model.model, 'model'):
-    # Для YOLOv8: model.model - это Sequential, последний слой - Linear
-    # Убираем последний слой
-    torch_model = model.model.model
-    # Убираем последний слой (классификатор)
-    embedder = torch.nn.Sequential(*list(torch_model.children())[:-1])
-else:
-    raise Exception("Не удалось извлечь PyTorch модель из YOLO")
-
+# Отрезаем классификатор
+torch_model = model.model.model
+embedder = torch.nn.Sequential(*list(torch_model.children())[:-1])
 embedder.eval()
 print("Модель загружена.")
 
@@ -39,7 +32,7 @@ transform = transforms.Compose([
 def get_embedding(image_path):
     try:
         img = Image.open(image_path).convert('RGB')
-        img_tensor = transform(img).unsqueeze(0)  # добавляем batch
+        img_tensor = transform(img).unsqueeze(0)
         with torch.no_grad():
             emb = embedder(img_tensor).flatten().cpu().numpy()
         return emb
