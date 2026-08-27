@@ -18,12 +18,28 @@ INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "best.pt"
 
-# Словарь замечаний по префиксам
-CATEGORY_MAP = {
-    "01_otsutstvuyut_birki": "⚠️ Отсутствуют бирки на оборудовании",
-    "02_zadelka_prohodok": "⚠️ Не выполнена заделка проходок",
-    "03_zazemlenie_ne_vypolneno": "⚠️ Не выполнено заземление",
-    "04_shpilki_lotka_ne_srezany": "⚠️ Шпильки лотка не срезаны",
+# Словарь замечаний с нормативами и префиксом эталона
+CATEGORY_DATA = {
+    "01_otsutstvuyut_birki": {
+        "text": "⚠️ Отсутствуют бирки на оборудовании",
+        "etalon_prefix": "birki_etalon",
+        "normative": "ГОСТ Р 21.1101-2022"
+    },
+    "02_zadelka_prohodok": {
+        "text": "⚠️ Не выполнена заделка проходок",
+        "etalon_prefix": "prohodki_etalon",
+        "normative": "СП 76.13330.2016"
+    },
+    "03_zazemlenie_ne_vypolneno": {
+        "text": "⚠️ Не выполнено заземление",
+        "etalon_prefix": "zazemlenie_etalon",
+        "normative": "ПУЭ 1.7.76"
+    },
+    "04_shpilki_lotka_ne_srezany": {
+        "text": "⚠️ Шпильки лотка не срезаны",
+        "etalon_prefix": "shpilki_etalon",
+        "normative": "ГОСТ Р 50571.5.52-2011"
+    },
 }
 
 index = None
@@ -68,8 +84,6 @@ def load_index():
             raw_paths = pickle.load(f)
         image_paths = [os.path.join("photo_db", os.path.basename(p)) for p in raw_paths]
         print(f"Индекс загружен, {len(image_paths)} изображений.")
-        if len(image_paths) > 0:
-            print("Примеры имён файлов в индексе:", [os.path.basename(p) for p in image_paths[:5]])
 
 # ===== ЗАГРУЗКА МОДЕЛИ =====
 def load_model():
@@ -100,19 +114,27 @@ def get_embedding(image_path):
         emb = embedder(img_tensor).flatten().cpu().numpy()
     return emb
 
-def get_category(filename):
-    """Определяет замечание по префиксу имени файла."""
+def find_etalon(prefix):
+    """Ищет первый файл в папке etalons, начинающийся с prefix."""
+    etalon_dir = "etalons"
+    if not os.path.exists(etalon_dir):
+        return None
+    for f in os.listdir(etalon_dir):
+        if f.startswith(prefix) and f.lower().endswith(('.jpg', '.jpeg', '.png')):
+            return os.path.join(etalon_dir, f)
+    return None
+
+def get_category_data(filename):
+    """Возвращает данные о замечании по префиксу имени файла."""
     name = os.path.basename(filename)
-    print(f"🔎 Определяем категорию для: {name}")
-    for prefix, text in CATEGORY_MAP.items():
+    for prefix, data in CATEGORY_DATA.items():
         if name.startswith(prefix):
-            return text
-    # Попробуем без учёта регистра (на всякий случай)
-    name_lower = name.lower()
-    for prefix, text in CATEGORY_MAP.items():
-        if name_lower.startswith(prefix.lower()):
-            return text
-    return f"📌 Неизвестное замечание (файл: {name})"
+            return data
+    return {
+        "text": f"📌 Неизвестное замечание (файл: {name})",
+        "etalon_prefix": None,
+        "normative": None
+    }
 
 # ===== ОБРАБОТЧИК =====
 async def handle_photo(update, context):
@@ -141,14 +163,25 @@ async def handle_photo(update, context):
         filename = os.path.basename(full_path)
         print(f"🔍 Найден файл: {filename}")
 
-        category_text = get_category(full_path)
+        data = get_category_data(full_path)
+        response = f"🔍 **Найдено замечание:**\n{data['text']}\n\n📄 Образец: {filename}"
 
-        response = (
-            f"🔍 **Найдено замечание:**\n"
-            f"{category_text}\n\n"
-            f"📄 Образец: {filename}"
-        )
-        await update.message.reply_text(response)
+        if data.get("normative"):
+            response += f"\n📜 Норматив: {data['normative']}"
+
+        # Ищем эталон
+        etalon_path = None
+        if data.get("etalon_prefix"):
+            etalon_path = find_etalon(data["etalon_prefix"])
+            if etalon_path:
+                response += f"\n📸 Эталон: {os.path.basename(etalon_path)}"
+
+        # Отправляем ответ с фото эталона, если он найден
+        if etalon_path and os.path.exists(etalon_path):
+            with open(etalon_path, 'rb') as f:
+                await update.message.reply_photo(photo=f, caption=response)
+        else:
+            await update.message.reply_text(response)
 
     except Exception as e:
         print(f"Ошибка: {e}")
