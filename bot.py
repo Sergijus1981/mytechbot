@@ -1,4 +1,3 @@
-
 import os
 import pickle
 import zipfile
@@ -19,29 +18,14 @@ INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "best.pt"
 
-# Словарь замечаний с нормативами и префиксом эталона
-CATEGORY_DATA = {
-    "01_otsutstvuyut_birki": {
-        "text": "⚠️ Отсутствуют бирки на оборудовании",
-        "etalon_prefix": "birki_etalon",
-        "normative": "ГОСТ Р 21.1101-2022"
-    },
-    "02_zadelka_prohodok": {
-        "text": "⚠️ Не выполнена заделка проходок",
-        "etalon_prefix": "prohodki_etalon",
-        "normative": "СП 76.13330.2016"
-    },
-    "03_zazemlenie_ne_vypolneno": {
-        "text": "⚠️ Не выполнено заземление",
-        "etalon_prefix": "zazemlenie_etalon",
-        "normative": "ПУЭ 1.7.76"
-    },
-    "04_shpilki_lotka_ne_srezany": {
-        "text": "⚠️ Шпильки лотка не срезаны",
-        "etalon_prefix": "shpilki_etalon",
-        "normative": "ГОСТ Р 50571.5.52-2011"
-    },
-}
+# Словарь замечаний с ключевыми словами (для поиска)
+CATEGORY_DATA = [
+    # (ключевое_слово, текст, префикс_эталона, норматив)
+    ("01_otsutstvuyut_birki", "⚠️ Отсутствуют бирки на оборудовании", "birki_etalon", "ГОСТ Р 21.1101-2022"),
+    ("02_zadelka_prohodok", "⚠️ Не выполнена заделка проходок", "prohodki_etalon", "СП 76.13330.2016"),
+    ("03_zazemlenie_ne_vypolneno", "⚠️ Не выполнено заземление", "zazemlenie_etalon", "ПУЭ 1.7.76"),
+    ("04_shpilki_lotka_ne_srezany", "⚠️ Шпильки лотка не срезаны", "shpilki_etalon", "ГОСТ Р 50571.5.52-2011"),
+]
 
 index = None
 image_paths = None
@@ -115,6 +99,42 @@ def get_embedding(image_path):
         emb = embedder(img_tensor).flatten().cpu().numpy()
     return emb
 
+def get_category_info(filename):
+    """Ищет информацию о замечании по имени файла (сначала точное совпадение, потом по ключевым словам)."""
+    name = os.path.basename(filename)  # только имя файла
+    print(f"🔎 Определяем категорию для: {name}")
+
+    # 1. Пробуем точное совпадение с началом
+    for keyword, text, etalon_prefix, normative in CATEGORY_DATA:
+        if name.startswith(keyword):
+            return {
+                "text": text,
+                "etalon_prefix": etalon_prefix,
+                "normative": normative
+            }
+
+    # 2. Если не совпало, пробуем искать ключевое слово внутри имени (без цифр и подчёркиваний)
+    # Убираем расширение и разделяем по "_"
+    parts = name.split('_')
+    # Ищем в частях что-то похожее на наши ключи
+    for keyword, text, etalon_prefix, normative in CATEGORY_DATA:
+        # разбиваем ключевое слово на части
+        kw_parts = keyword.split('_')
+        # проверяем, что хотя бы одна часть ключа присутствует в имени
+        if any(kp in parts for kp in kw_parts):
+            return {
+                "text": text,
+                "etalon_prefix": etalon_prefix,
+                "normative": normative
+            }
+
+    # Если ничего не найдено
+    return {
+        "text": f"📌 Неизвестное замечание (файл: {name})",
+        "etalon_prefix": None,
+        "normative": None
+    }
+
 def find_etalon(prefix):
     """Ищет первый файл в папке etalons, начинающийся с prefix."""
     etalon_dir = "etalons"
@@ -124,18 +144,6 @@ def find_etalon(prefix):
         if f.startswith(prefix) and f.lower().endswith(('.jpg', '.jpeg', '.png')):
             return os.path.join(etalon_dir, f)
     return None
-
-def get_category_data(filename):
-    """Возвращает данные о замечании по префиксу имени файла."""
-    name = os.path.basename(filename)
-    for prefix, data in CATEGORY_DATA.items():
-        if name.startswith(prefix):
-            return data
-    return {
-        "text": f"📌 Неизвестное замечание (файл: {name})",
-        "etalon_prefix": None,
-        "normative": None
-    }
 
 # ===== ОБРАБОТЧИК =====
 async def handle_photo(update, context):
@@ -164,16 +172,18 @@ async def handle_photo(update, context):
         filename = os.path.basename(full_path)
         print(f"🔍 Найден файл: {filename}")
 
-        data = get_category_data(full_path)
-        response = f"🔍 **Найдено замечание:**\n{data['text']}\n\n📄 Образец: {filename}"
+        info = get_category_info(full_path)
 
-        if data.get("normative"):
-            response += f"\n📜 Норматив: {data['normative']}"
+        # Формируем ответ
+        response = f"🔍 **Найдено замечание:**\n{info['text']}\n\n📄 Образец: {filename}"
+
+        if info.get("normative"):
+            response += f"\n📜 Норматив: {info['normative']}"
 
         # Ищем эталон
         etalon_path = None
-        if data.get("etalon_prefix"):
-            etalon_path = find_etalon(data["etalon_prefix"])
+        if info.get("etalon_prefix"):
+            etalon_path = find_etalon(info["etalon_prefix"])
             if etalon_path:
                 response += f"\n📸 Эталон: {os.path.basename(etalon_path)}"
 
