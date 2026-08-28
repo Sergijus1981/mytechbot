@@ -18,9 +18,8 @@ INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "best.pt"
 
-# Словарь замечаний с ключевыми словами (для поиска)
+# Словарь замечаний
 CATEGORY_DATA = [
-    # (ключевое_слово, текст, префикс_эталона, норматив)
     ("01_otsutstvuyut_birki", "⚠️ Отсутствуют бирки на оборудовании", "birki_etalon", "ГОСТ Р 21.1101-2022"),
     ("02_zadelka_prohodok", "⚠️ Не выполнена заделка проходок", "prohodki_etalon", "СП 76.13330.2016"),
     ("03_zazemlenie_ne_vypolneno", "⚠️ Не выполнено заземление", "zazemlenie_etalon", "ПУЭ 1.7.76"),
@@ -100,43 +99,22 @@ def get_embedding(image_path):
     return emb
 
 def get_category_info(filename):
-    """Ищет информацию о замечании по имени файла (сначала точное совпадение, потом по ключевым словам)."""
-    name = os.path.basename(filename)  # только имя файла
+    name = os.path.basename(filename)
     print(f"🔎 Определяем категорию для: {name}")
 
-    # 1. Пробуем точное совпадение с началом
     for keyword, text, etalon_prefix, normative in CATEGORY_DATA:
         if name.startswith(keyword):
-            return {
-                "text": text,
-                "etalon_prefix": etalon_prefix,
-                "normative": normative
-            }
+            return {"text": text, "etalon_prefix": etalon_prefix, "normative": normative}
 
-    # 2. Если не совпало, пробуем искать ключевое слово внутри имени (без цифр и подчёркиваний)
-    # Убираем расширение и разделяем по "_"
     parts = name.split('_')
-    # Ищем в частях что-то похожее на наши ключи
     for keyword, text, etalon_prefix, normative in CATEGORY_DATA:
-        # разбиваем ключевое слово на части
         kw_parts = keyword.split('_')
-        # проверяем, что хотя бы одна часть ключа присутствует в имени
         if any(kp in parts for kp in kw_parts):
-            return {
-                "text": text,
-                "etalon_prefix": etalon_prefix,
-                "normative": normative
-            }
+            return {"text": text, "etalon_prefix": etalon_prefix, "normative": normative}
 
-    # Если ничего не найдено
-    return {
-        "text": f"📌 Неизвестное замечание (файл: {name})",
-        "etalon_prefix": None,
-        "normative": None
-    }
+    return {"text": f"📌 Неизвестное замечание (файл: {name})", "etalon_prefix": None, "normative": None}
 
 def find_etalon(prefix):
-    """Ищет первый файл в папке etalons, начинающийся с prefix."""
     etalon_dir = "etalons"
     if not os.path.exists(etalon_dir):
         return None
@@ -145,7 +123,7 @@ def find_etalon(prefix):
             return os.path.join(etalon_dir, f)
     return None
 
-# ===== ОБРАБОТЧИК =====
+# ===== ОБРАБОТЧИК (исправлен) =====
 async def handle_photo(update, context):
     try:
         load_index()
@@ -174,20 +152,15 @@ async def handle_photo(update, context):
 
         info = get_category_info(full_path)
 
-        # Формируем ответ
-        response = f"🔍 **Найдено замечание:**\n{info['text']}\n\n📄 Образец: {filename}"
+        response = f"🔍 **Найдено замечание:**\n{info['text']}"
 
         if info.get("normative"):
             response += f"\n📜 Норматив: {info['normative']}"
 
-        # Ищем эталон
         etalon_path = None
         if info.get("etalon_prefix"):
             etalon_path = find_etalon(info["etalon_prefix"])
-            if etalon_path:
-                response += f"\n📸 Эталон: {os.path.basename(etalon_path)}"
 
-        # Отправляем ответ с фото эталона, если он найден
         if etalon_path and os.path.exists(etalon_path):
             with open(etalon_path, 'rb') as f:
                 await update.message.reply_photo(photo=f, caption=response)
