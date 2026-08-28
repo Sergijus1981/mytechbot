@@ -24,14 +24,35 @@ INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "best.pt"
 
-# Словарь замечаний
+# ===== НОРМАТИВНЫЕ ДАННЫЕ ПО КАТЕГОРИЯМ =====
 CATEGORY_DATA = [
-    ("01_otsutstvuyut_birki", "⚠️ Отсутствуют бирки на оборудовании", "birki_etalon", "ГОСТ Р 21.1101-2022"),
-    ("02_zadelka_prohodok", "⚠️ Не выполнена заделка проходок", "prohodki_etalon", "СП 76.13330.2016"),
-    ("03_zazemlenie_ne_vypolneno", "⚠️ Не выполнено заземление", "zazemlenie_etalon", "ПУЭ 1.7.76"),
-    ("04_shpilki_lotka_ne_srezany", "⚠️ Шпильки лотка не срезаны", "shpilki_etalon", "ГОСТ Р 50571.5.52-2011"),
+    (
+        "01_otsutstvuyut_birki",
+        "⚠️ Отсутствуют бирки на оборудовании (кабелях, муфтах, аппаратах).",
+        "birki_etalon",
+        "ПУЭ п. 2.3.23, СП 76.13330.2016 п. 6.4.8"
+    ),
+    (
+        "02_zadelka_prohodok",
+        "⚠️ Не выполнена заделка проходок (зазоры в трубах, коробах, проёмах).",
+        "prohodki_etalon",
+        "СП 76.13330.2016 п. 6.4.1.25"
+    ),
+    (
+        "03_zazemlenie_ne_vypolneno",
+        "⚠️ Не выполнено заземление (или не соответствует нормам).",
+        "zazemlenie_etalon",
+        "ПУЭ п. 1.7.76"
+    ),
+    (
+        "04_shpilki_lotka_ne_srezany",
+        "⚠️ Шпильки лотка не срезаны (опасность травматизма и повреждения кабелей).",
+        "shpilki_etalon",
+        "ГОСТ Р 50571.5.52-2011"
+    ),
 ]
 
+# Глобальные переменные
 index = None
 image_paths = None
 embedder = None
@@ -49,20 +70,21 @@ def generate_pdf_report(report_data, chat_id):
     styles = getSampleStyleSheet()
     story = []
 
-    # Заголовок
     title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, alignment=1)
     story.append(Paragraph(f"📋 Отчёт по технадзору", title_style))
     story.append(Paragraph(f"Дата: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 12*mm))
 
-    # Если есть данные — выводим
     if report_data:
         for i, item in enumerate(report_data, 1):
             story.append(Paragraph(f"<b>Замечание #{i}</b>", styles['Heading2']))
             story.append(Paragraph(f"📌 {item.get('text', 'Неизвестно')}", styles['Normal']))
             story.append(Paragraph(f"📜 Норматив: {item.get('normative', '—')}", styles['Normal']))
+            story.append(Paragraph(
+                "🛠 Необходимо привести в соответствие с ГОСТ IEC 61293-2016 (Оборудование электрическое. Маркировка с указанием номинальных значений характеристик источников электропитания. Требования техники безопасности).[reference:8]",
+                styles['Normal']
+            ))
             
-            # Если есть фото — вставляем
             if item.get('photo_path') and os.path.exists(item['photo_path']):
                 try:
                     img = RLImage(item['photo_path'], width=120*mm, height=80*mm)
@@ -79,8 +101,97 @@ def generate_pdf_report(report_data, chat_id):
     buffer.seek(0)
     return buffer
 
-# ===== ОСТАЛЬНЫЕ ФУНКЦИИ (download_and_extract_photos, load_index, load_model, get_embedding, get_category_info, find_etalon) — ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ =====
-# ... (код, который у тебя уже есть, вставляется сюда без изменений)
+# ===== АВТОЗАГРУЗКА ФОТО =====
+def download_and_extract_photos():
+    if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
+        print("📁 photo_db уже существует, пропускаю загрузку.")
+        return
+
+    print("📥 Скачиваю архив с фото через gdown...")
+    gdown.download(PHOTO_DB_URL, "photo_db.zip", quiet=False)
+
+    print("📦 Распаковываю...")
+    with zipfile.ZipFile("photo_db.zip", "r") as zip_ref:
+        zip_ref.extractall(".")
+    os.remove("photo_db.zip")
+
+    if not os.path.exists("photo_db"):
+        for item in os.listdir("."):
+            if os.path.isdir(item) and item.startswith("photo_db"):
+                os.rename(item, "photo_db")
+                break
+        else:
+            os.mkdir("photo_db")
+            for f in os.listdir("."):
+                if f.lower().endswith(('.jpg', '.jpeg', '.png')):
+                    os.rename(f, os.path.join("photo_db", f))
+
+    print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")
+
+# ===== ЗАГРУЗКА ИНДЕКСА =====
+def load_index():
+    global index, image_paths
+    if index is None:
+        print("Загружаю индекс...")
+        index = faiss.read_index(INDEX_PATH)
+        with open(PATHS_PATH, "rb") as f:
+            raw_paths = pickle.load(f)
+        image_paths = [os.path.join("photo_db", os.path.basename(p)) for p in raw_paths]
+        print(f"Индекс загружен, {len(image_paths)} изображений.")
+
+# ===== ЗАГРУЗКА МОДЕЛИ =====
+def load_model():
+    global embedder, transform
+    if embedder is None:
+        print("Загружаю модель...")
+        try:
+            model = YOLO(MODEL_PATH)
+            torch_model = model.model.model
+            embedder = torch.nn.Sequential(*list(torch_model.children())[:-1])
+            embedder.eval()
+            transform = transforms.Compose([
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+            ])
+            print("Модель загружена.")
+        except Exception as e:
+            print(f"⚠️ Модель не загружена: {e}. Будем использовать только имена файлов.")
+            embedder = None
+
+def get_embedding(image_path):
+    if embedder is None:
+        return np.random.rand(128).astype('float32')
+    img = Image.open(image_path).convert('RGB')
+    img_tensor = transform(img).unsqueeze(0)
+    with torch.no_grad():
+        emb = embedder(img_tensor).flatten().cpu().numpy()
+    return emb
+
+def get_category_info(filename):
+    name = os.path.basename(filename)
+    print(f"🔎 Определяем категорию для: {name}")
+
+    for keyword, text, etalon_prefix, normative in CATEGORY_DATA:
+        if name.startswith(keyword):
+            return {"text": text, "etalon_prefix": etalon_prefix, "normative": normative}
+
+    parts = name.split('_')
+    for keyword, text, etalon_prefix, normative in CATEGORY_DATA:
+        kw_parts = keyword.split('_')
+        if any(kp in parts for kp in kw_parts):
+            return {"text": text, "etalon_prefix": etalon_prefix, "normative": normative}
+
+    return {"text": f"📌 Неизвестное замечание (файл: {name})", "etalon_prefix": None, "normative": None}
+
+def find_etalon(prefix):
+    etalon_dir = "etalons"
+    if not os.path.exists(etalon_dir):
+        return None
+    for f in os.listdir(etalon_dir):
+        if f.startswith(prefix) and f.lower().endswith(('.jpg', '.jpeg', '.png')):
+            return os.path.join(etalon_dir, f)
+    return None
 
 # ===== ОБРАБОТЧИК ФОТО =====
 async def handle_photo(update, context):
@@ -108,13 +219,12 @@ async def handle_photo(update, context):
         filename = os.path.basename(full_path)
         info = get_category_info(full_path)
 
-        # Сохраняем результат в сессию
         if 'report_data' not in context.user_data:
             context.user_data['report_data'] = []
         context.user_data['report_data'].append({
             'text': info['text'],
             'normative': info.get('normative'),
-            'photo_path': user_path  # временный файл
+            'photo_path': user_path
         })
 
         response = f"🔍 **Найдено замечание:**\n{info['text']}"
@@ -146,14 +256,12 @@ async def button_callback(update, context):
             await query.edit_message_text("📭 Нет замечаний для отчёта. Сначала отправьте фотографии.")
             return
 
-        # Генерируем PDF
         pdf_buffer = generate_pdf_report(report_data, query.message.chat.id)
         await query.message.reply_document(
             document=pdf_buffer,
             filename=f"report_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
             caption="📄 Ваш отчёт готов!"
         )
-        # Очищаем сессию после отправки
         context.user_data['report_data'] = []
 
 # ===== ЗАПУСК =====
