@@ -19,6 +19,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.lib.fonts import addMapping
 import io
 import datetime
+import shutil
 
 # ===== КОНФИГ =====
 TOKEN = "8216393055:AAF6sbjxic7y9tpMN-yKGTNagAEqnszhL8U"
@@ -84,7 +85,6 @@ def generate_pdf_report(report_data, chat_id):
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     
-    # Применяем кириллический шрифт ко всем стилям
     for style_name in styles.byName:
         styles[style_name].fontName = FONT_NAME
     
@@ -123,7 +123,7 @@ def generate_pdf_report(report_data, chat_id):
     buffer.seek(0)
     return buffer
 
-# ===== ОСТАЛЬНЫЕ ФУНКЦИИ =====
+# ===== АВТОЗАГРУЗКА ФОТО =====
 def download_and_extract_photos():
     if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
         print("📁 photo_db уже существует, пропускаю загрузку.")
@@ -146,6 +146,7 @@ def download_and_extract_photos():
                     os.rename(f, os.path.join("photo_db", f))
     print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")
 
+# ===== ЗАГРУЗКА ИНДЕКСА =====
 def load_index():
     global index, image_paths
     if index is None:
@@ -156,6 +157,7 @@ def load_index():
         image_paths = [os.path.join("photo_db", os.path.basename(p)) for p in raw_paths]
         print(f"Индекс загружен, {len(image_paths)} изображений.")
 
+# ===== ЗАГРУЗКА МОДЕЛИ =====
 def load_model():
     global embedder, transform
     if embedder is None:
@@ -206,44 +208,66 @@ def find_etalon(prefix):
             return os.path.join(etalon_dir, f)
     return None
 
+# ===== ОБРАБОТЧИК ФОТО (с сохранением в review/) =====
 async def handle_photo(update, context):
     try:
         load_index()
         load_model()
+
         photo = update.message.photo[-1]
         file = await photo.get_file()
         user_path = f"temp_{update.message.chat.id}.jpg"
         await file.download_to_drive(user_path)
+
         emb = get_embedding(user_path)
         os.remove(user_path)
+
         emb = np.array([emb]).astype('float32')
         distances, indices = index.search(emb, 1)
+
         if len(indices[0]) == 0 or indices[0][0] == -1:
             await update.message.reply_text("❌ Не удалось найти похожее изображение в базе.")
             return
+
         idx = indices[0][0]
         full_path = image_paths[idx]
         info = get_category_info(full_path)
-        if 'report_data' not in context.user_data:
-            context.user_data['report_data'] = []
-        context.user_data['report_data'].append({
-            'text': info['text'],
-            'normative': info.get('normative'),
-            'photo_path': user_path
-        })
-        response = f"🔍 **Найдено замечание:**\n{info['text']}"
+
+        # Сохраняем оригинальное фото в папку review/ для ручной проверки
+        category_folder = info.get("etalon_prefix", "unknown")
+        review_dir = os.path.join("review", category_folder)
+        os.makedirs(review_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        review_path = os.path.join(review_dir, f"{timestamp}.jpg")
+        # Скачиваем фото заново в папку review
+        await file.download_to_drive(review_path)
+
+        response = f"🔍 **Найдено замечание:**\n{info['text']}\n\n📸 Фото сохранено для ручной проверки инспектором.\n🕒 Ожидайте подтверждения."
         if info.get("normative"):
             response += f"\n📜 Норматив: {info['normative']}"
+
+        # Отправляем эталон
         etalon_path = find_etalon(info.get("etalon_prefix"))
         if etalon_path and os.path.exists(etalon_path):
             with open(etalon_path, 'rb') as f:
                 await update.message.reply_photo(photo=f, caption=response, reply_markup=get_report_keyboard())
         else:
             await update.message.reply_text(response, reply_markup=get_report_keyboard())
+
+        # Сохраняем в сессию для отчёта
+        if 'report_data' not in context.user_data:
+            context.user_data['report_data'] = []
+        context.user_data['report_data'].append({
+            'text': info['text'],
+            'normative': info.get('normative'),
+            'photo_path': review_path
+        })
+
     except Exception as e:
         print(f"Ошибка: {e}")
         await update.message.reply_text(f"❌ Ошибка: {e}")
 
+# ===== ОБРАБОТЧИК КНОПКИ =====
 async def button_callback(update, context):
     query = update.callback_query
     await query.answer()
