@@ -10,12 +10,27 @@ from PIL import Image
 import torch
 from torchvision import transforms
 from ultralytics import YOLO
+
+# ===== PDF и шрифты =====
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 import io
 import datetime
+
+# ===== РЕГИСТРАЦИЯ ШРИФТА =====
+# Пытаемся загрузить шрифт с кириллицей (DejaVuSans)
+# Если файл есть в папке с ботом — он будет использован
+try:
+    pdfmetrics.registerFont(TTFont('DejaVuSans', 'DejaVuSans.ttf'))
+    FONT_NAME = 'DejaVuSans'
+    print("✅ Шрифт DejaVuSans загружен для PDF")
+except Exception as e:
+    print(f"⚠️ Шрифт DejaVuSans не загружен: {e}. Будет использован шрифт Helvetica (без кириллицы).")
+    FONT_NAME = 'Helvetica'
 
 # ===== КОНФИГ =====
 TOKEN = "8216393055:AAF6sbjxic7y9tpMN-yKGTNagAEqnszhL8U"
@@ -24,7 +39,7 @@ INDEX_PATH = "faiss_index.bin"
 PATHS_PATH = "image_paths.pkl"
 MODEL_PATH = "best.pt"
 
-# ===== НОРМАТИВНЫЕ ДАННЫЕ ПО КАТЕГОРИЯМ =====
+# ===== СЛОВАРЬ ЗАМЕЧАНИЙ =====
 CATEGORY_DATA = [
     (
         "01_otsutstvuyut_birki",
@@ -63,15 +78,20 @@ def get_report_keyboard():
     keyboard = [[InlineKeyboardButton("📄 Сформировать отчёт", callback_data="generate_report")]]
     return InlineKeyboardMarkup(keyboard)
 
-# ===== ГЕНЕРАЦИЯ PDF =====
+# ===== ГЕНЕРАЦИЯ PDF (с кириллицей) =====
 def generate_pdf_report(report_data, chat_id):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
+    
+    # Применяем кириллический шрифт ко всем стилям
+    for style_name in styles.byName:
+        styles[style_name].fontName = FONT_NAME
+    
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, alignment=1, fontName=FONT_NAME)
+    
     story = []
-
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=18, alignment=1)
-    story.append(Paragraph(f"📋 Отчёт по технадзору", title_style))
+    story.append(Paragraph("📋 Отчёт по технадзору", title_style))
     story.append(Paragraph(f"Дата: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}", styles['Normal']))
     story.append(Spacer(1, 12*mm))
 
@@ -81,7 +101,9 @@ def generate_pdf_report(report_data, chat_id):
             story.append(Paragraph(f"📌 {item.get('text', 'Неизвестно')}", styles['Normal']))
             story.append(Paragraph(f"📜 Норматив: {item.get('normative', '—')}", styles['Normal']))
             story.append(Paragraph(
-                "🛠 Необходимо привести в соответствие с ГОСТ IEC 61293-2016 (Оборудование электрическое. Маркировка с указанием номинальных значений характеристик источников электропитания. Требования техники безопасности).[reference:8]",
+                "🛠 Необходимо привести в соответствие с ГОСТ IEC 61293-2016 "
+                "(Оборудование электрическое. Маркировка с указанием номинальных "
+                "значений характеристик источников электропитания. Требования техники безопасности).",
                 styles['Normal']
             ))
             
