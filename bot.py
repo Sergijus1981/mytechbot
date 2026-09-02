@@ -1,6 +1,18 @@
-import os, pickle, zipfile, gdown, requests, numpy as np, faiss, sqlite3, shutil, subprocess, io, datetime as dt, json
+import os
+import pickle
+import zipfile
+import gdown
+import requests
+import numpy as np
+import faiss
+import sqlite3
+import shutil
+import subprocess
+import io
+import datetime as dt
+import json
 from datetime import timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto
 from telegram.ext import Application, MessageHandler, filters, CallbackQueryHandler, CommandHandler
 from PIL import Image
 import torch
@@ -13,14 +25,20 @@ from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics, ttfonts
 from reportlab.lib.fonts import addMapping
 
-# ===== CONFIG =====
+# ===== КОНФИГ =====
 TOKEN = "8993796250:AAFWDsfKuc4Bvha2ED-fvUyONlQ_iiNpCCk"
-PHOTO_DB_URL = "https://dl.dropboxusercontent.com/scl/fi/xxl7bna8h3re0ks9jdsy6/photo_db.zip?rlkey=j94j0yuv1e3sg67txyzda4zo9&dl=1"
-ETALONS_URL = "https://dl.dropboxusercontent.com/scl/fi/c7xk15hjnjx1eyzwmwrds/etalons.zip?rlkey=xos4ax8t621r6w8r16ji0tsk1&dl=1"
-INDEX_PATH, PATHS_PATH, MODEL_PATH = "faiss_index.bin", "image_paths.pkl", "best.pt"
+
+# ===== ВСТАВЬ СЮДА СВОИ FILE_ID =====
+# Как получить: отправь архив боту, он ответит file_id
+PHOTO_DB_FILE_ID = "ВАШ_FILE_ID_ДЛЯ_PHOTO_DB_ZIP"   # ЗАМЕНИ
+ETALONS_FILE_ID = "ВАШ_FILE_ID_ДЛЯ_ETALONS_ZIP"     # ЗАМЕНИ
+
+INDEX_PATH = "faiss_index.bin"
+PATHS_PATH = "image_paths.pkl"
+MODEL_PATH = "best.pt"
 OWNER_ID = 8743362338
 
-# ===== TRANSLATIONS (EN, RU, ES) =====
+# ===== ПЕРЕВОДЫ =====
 T = {
     "en": {
         "welcome": "Hello! 👋\nI'm a technical inspection bot. Send me a photo of electrical installation, and I'll find possible violations.\n\nJust send a photo!",
@@ -126,7 +144,7 @@ T = {
     }
 }
 
-# ===== CATEGORIES =====
+# ===== КАТЕГОРИИ (МУЛЬТИЯЗЫЧНЫЕ) =====
 CATEGORIES = [
     {"keyword":"01_otsutstvuyut_birki", "etalon_prefix":"birki_etalon", "label_ru":"Бирки", "label_en":"Labels", "label_es":"Etiquetas",
      "text":{"en":"⚠️ Missing cable/equipment labels.", "ru":"⚠️ Отсутствуют бирки на оборудовании.", "es":"⚠️ Faltan etiquetas en cables/equipos."},
@@ -148,7 +166,7 @@ CATEGORIES = [
      "normative":{"en":"IEC 61082-1, NEC 110.22", "ru":"ПУЭ п. 1.8.4, СП 76.13330.2016 п. 6.4.8", "es":"IEC 61082-1, NEC 110.22"}}
 ]
 
-# ===== DB =====
+# ===== БАЗА ДАННЫХ =====
 def init_db():
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
@@ -164,16 +182,17 @@ def init_db():
         created_at TEXT,
         PRIMARY KEY (user_id)
     )''')
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def register_user(user_id):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     now = dt.datetime.now().isoformat()
-    c.execute("INSERT OR IGNORE INTO users (user_id, first_seen, last_seen, language) VALUES (?, ?, ?, 'en')",
-              (user_id, now, now))
+    c.execute("INSERT OR IGNORE INTO users (user_id, first_seen, last_seen, language) VALUES (?, ?, ?, 'en')", (user_id, now, now))
     c.execute("UPDATE users SET last_seen = ? WHERE user_id = ?", (now, user_id))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def get_lang(user_id):
     conn = sqlite3.connect("users.db")
@@ -188,7 +207,8 @@ def set_lang(user_id, lang):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     c.execute("UPDATE users SET language = ? WHERE user_id = ?", (lang, user_id))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def get_stats():
     conn = sqlite3.connect("users.db")
@@ -205,9 +225,9 @@ def save_session(user_id, report_data):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     data_json = json.dumps(report_data)
-    c.execute("INSERT OR REPLACE INTO sessions (user_id, report_data, created_at) VALUES (?, ?, ?)",
-              (user_id, data_json, dt.datetime.now().isoformat()))
-    conn.commit(); conn.close()
+    c.execute("INSERT OR REPLACE INTO sessions (user_id, report_data, created_at) VALUES (?, ?, ?)", (user_id, data_json, dt.datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
 
 def load_session(user_id):
     conn = sqlite3.connect("users.db")
@@ -222,9 +242,10 @@ def delete_session(user_id):
     conn = sqlite3.connect("users.db")
     c = conn.cursor()
     c.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
-# ===== FONT =====
+# ===== ШРИФТ =====
 try:
     pdfmetrics.registerFont(ttfonts.TTFont('DejaVuSans', 'DejaVuSans.ttf'))
     addMapping('DejaVuSans', 0, 0, 'DejaVuSans')
@@ -232,44 +253,68 @@ try:
 except:
     FONT = 'Helvetica'
 
-# ===== GLOBALS =====
+# ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
 index = None
 image_paths = None
 embedder = None
 transform = None
 
-# ===== DOWNLOADS =====
-def download_and_extract_photos():
+# ===== СКАЧИВАНИЕ ПО FILE_ID (ВМЕСТО DROPBOX) =====
+def download_file_by_id(app, file_id, destination):
+    """Скачивает файл из Telegram по file_id"""
+    try:
+        file_info = app.bot.get_file(file_id)
+        file_info.download(destination)
+        print(f"✅ Файл сохранён: {destination}")
+        return True
+    except Exception as e:
+        print(f"❌ Ошибка скачивания: {e}")
+        return False
+
+def download_and_extract_photos(app):
     if os.path.exists("photo_db") and len(os.listdir("photo_db")) > 0:
-        print("photo_db exists")
+        print("📁 photo_db уже существует, пропускаю загрузку.")
         return
-    print("Downloading photo_db...")
-    gdown.download(PHOTO_DB_URL, "photo_db.zip", quiet=False)
-    with zipfile.ZipFile("photo_db.zip", "r") as z: z.extractall(".")
+    print("📥 Скачиваю photo_db.zip из Telegram...")
+    if not download_file_by_id(app, PHOTO_DB_FILE_ID, "photo_db.zip"):
+        print("❌ Не удалось скачать photo_db.zip")
+        return
+    print("📦 Распаковываю...")
+    with zipfile.ZipFile("photo_db.zip", "r") as zf:
+        zf.extractall(".")
     os.remove("photo_db.zip")
     if not os.path.exists("photo_db"):
-        os.mkdir("photo_db")
-        for f in os.listdir("."):
-            if f.lower().endswith(('.jpg','.jpeg','.png')): os.rename(f, os.path.join("photo_db", f))
-    print(f"photo_db ready, {len(os.listdir('photo_db'))} files")
+        for item in os.listdir("."):
+            if os.path.isdir(item) and item.startswith("photo_db"):
+                os.rename(item, "photo_db")
+                break
+    print(f"✅ photo_db готова, файлов: {len(os.listdir('photo_db'))}")
 
-def download_and_extract_etalons():
+def download_and_extract_etalons(app):
     if os.path.exists("etalons") and len(os.listdir("etalons")) > 0:
-        print("etalons exists")
+        print("📁 etalons уже существует, пропускаю загрузку.")
         return
-    print("Downloading etalons...")
-    r = requests.get(ETALONS_URL, stream=True)
-    with open("etalons.zip", "wb") as f:
-        for chunk in r.iter_content(8192): f.write(chunk)
-    with zipfile.ZipFile("etalons.zip", "r") as z: z.extractall(".")
+    print("📥 Скачиваю etalons.zip из Telegram...")
+    if not download_file_by_id(app, ETALONS_FILE_ID, "etalons.zip"):
+        print("❌ Не удалось скачать etalons.zip")
+        return
+    print("📦 Распаковываю...")
+    with zipfile.ZipFile("etalons.zip", "r") as zf:
+        zf.extractall(".")
     os.remove("etalons.zip")
-    print("etalons ready")
+    if not os.path.exists("etalons"):
+        for item in os.listdir("."):
+            if os.path.isdir(item) and item.startswith("etalons"):
+                os.rename(item, "etalons")
+                break
+    print(f"✅ etalons готова, файлов: {len(os.listdir('etalons'))}")
 
 def rebuild_index():
-    print("Rebuilding index...")
+    print("🔄 Перестраиваю индекс...")
     subprocess.run(["python", "index_builder.py"], check=True)
     load_index()
 
+# ===== ЗАГРУЗКА ИНДЕКСА =====
 def load_index():
     global index, image_paths
     if index is None:
@@ -277,8 +322,9 @@ def load_index():
         with open(PATHS_PATH, "rb") as f:
             raw = pickle.load(f)
         image_paths = [os.path.join("photo_db", os.path.basename(p)) for p in raw]
-        print(f"Index loaded, {len(image_paths)} images")
+        print(f"Индекс загружен, {len(image_paths)} изображений.")
 
+# ===== ЗАГРУЗКА МОДЕЛИ =====
 def load_model():
     global embedder, transform
     if embedder is None:
@@ -287,13 +333,13 @@ def load_model():
             torch_model = model.model.model
             embedder = torch.nn.Sequential(*list(torch_model.children())[:-1]).eval()
             transform = transforms.Compose([
-                transforms.Resize((224,224)),
+                transforms.Resize((224, 224)),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
             ])
-            print("Model loaded")
+            print("Модель загружена.")
         except Exception as e:
-            print(f"Model load failed: {e}")
+            print(f"⚠️ Модель не загружена: {e}")
             embedder = None
 
 def get_embedding(image_path):
@@ -328,14 +374,17 @@ def get_category_info(filename, lang):
     }
 
 def find_etalon(prefix):
-    if not prefix: return None
+    if not prefix:
+        return None
     etalon_dir = "etalons"
-    if not os.path.exists(etalon_dir): return None
+    if not os.path.exists(etalon_dir):
+        return None
     for f in os.listdir(etalon_dir):
-        if f.startswith(prefix) and f.lower().endswith(('.jpg','.jpeg','.png')):
+        if f.startswith(prefix) and f.lower().endswith(('.jpg', '.jpeg', '.png')):
             return os.path.join(etalon_dir, f)
     return None
 
+# ===== КЛАВИАТУРЫ =====
 def get_report_keyboard(lang):
     return InlineKeyboardMarkup([[InlineKeyboardButton(T[lang]['generate_order'], callback_data="generate_report")]])
 
@@ -346,11 +395,13 @@ def get_language_keyboard():
         [InlineKeyboardButton("🇪🇸 Español", callback_data="lang_es")]
     ])
 
+# ===== PDF =====
 def generate_pdf_report(report_data, lang):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
-    for s in styles.byName: styles[s].fontName = FONT
+    for s in styles.byName:
+        styles[s].fontName = FONT
     title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, alignment=1, fontName=FONT)
     story = []
     t = T[lang]
@@ -370,7 +421,8 @@ def generate_pdf_report(report_data, lang):
                 img = RLImage(photo_path, width=120*mm, height=80*mm)
                 story.append(img)
                 story.append(Paragraph(t['violation_photo'], styles['Normal']))
-            except: pass
+            except:
+                pass
         story.append(Spacer(1, 6*mm))
         story.append(Paragraph(t['deadline'], styles['Normal']))
         story.append(Spacer(1, 4*mm))
@@ -391,12 +443,14 @@ def generate_pdf_report(report_data, lang):
     buffer.seek(0)
     return buffer
 
+# ===== ОБРАБОТЧИКИ =====
 async def handle_photo(update, context):
     user_id = update.effective_user.id
     register_user(user_id)
     lang = get_lang(user_id)
     t = T[lang]
-    load_index(); load_model()
+    load_index()
+    load_model()
 
     photo = update.message.photo[-1]
     file = await photo.get_file()
@@ -426,7 +480,8 @@ async def handle_photo(update, context):
         if key and key not in seen:
             seen.add(key)
             unique.append(info)
-            if len(unique) >= 3: break
+            if len(unique) >= 3:
+                break
     if not unique:
         await update.message.reply_text(t['no_match'])
         return
@@ -434,7 +489,8 @@ async def handle_photo(update, context):
     response = t['defects_list'] + "\n"
     for i, d in enumerate(unique, 1):
         response += f"{i}. {d['text']}\n"
-        if d.get('normative'): response += f"   {t['standard']} {d['normative']}\n"
+        if d.get('normative'):
+            response += f"   {t['standard']} {d['normative']}\n"
 
     report_data = [{
         'text': d['text'],
@@ -491,7 +547,8 @@ async def button_callback(update, context):
         if action == "skip":
             await query.edit_message_text(t['classify_skipped'])
         elif action == "reject":
-            if os.path.exists(photo_path): os.remove(photo_path)
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
             await query.edit_message_text(t['classify_rejected'])
         else:
             cat = next((c for c in CATEGORIES if c["keyword"] == action), None)
@@ -503,7 +560,8 @@ async def button_callback(update, context):
             new_name = f"{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
             new_path = os.path.join(target, new_name)
             shutil.copy2(photo_path, new_path)
-            if os.path.exists(photo_path): os.remove(photo_path)
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
             rebuild_index()
             await query.edit_message_text(t['classify_success'].format(
                 category=cat["label_ru"] if lang=="ru" else cat["label_en"] if lang=="en" else cat["label_es"]
@@ -535,7 +593,7 @@ async def review_command(update, context):
     photos = []
     for root, _, files in os.walk(review_dir):
         for f in files:
-            if f.lower().endswith(('.jpg','.jpeg','.png')):
+            if f.lower().endswith(('.jpg', '.jpeg', '.png')):
                 photos.append(os.path.join(root, f))
     if not photos:
         await update.message.reply_text(t['review_empty'])
@@ -560,14 +618,20 @@ async def stats_command(update, context):
     lang = get_lang(user_id)
     await update.message.reply_text(T[lang]['stats'].format(total=total, today=today, week=week))
 
+# ===== ЗАПУСК =====
 if __name__ == "__main__":
     init_db()
-    download_and_extract_photos()
-    download_and_extract_etalons()
+    app = Application.builder().token(TOKEN).read_timeout(60).build()
+
+    # Скачиваем архивы из Telegram
+    download_and_extract_photos(app)
+    download_and_extract_etalons(app)
+
+    # Перестраиваем индекс, если нужно (убедимся, что index_builder.py использует best.pt)
     rebuild_index()
     load_index()
     load_model()
-    app = Application.builder().token(TOKEN).read_timeout(60).build()
+
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("review", review_command))
     app.add_handler(CommandHandler("stats", stats_command))
