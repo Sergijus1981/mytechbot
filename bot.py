@@ -614,6 +614,10 @@ async def stats_command(update, context):
     total, today, week = get_stats()
     lang = get_lang(user_id)
     await update.message.reply_text(T[lang]['stats'].format(total=total, today=today, week=week))
+async def get_file_id(update, context):
+    if update.message.document:
+        await update.message.reply_text(f"file_id: {update.message.document.file_id}")
+app.add_handler(MessageHandler(filters.Document.ALL, get_file_id))
 
 # ===== ЗАПУСК =====
 async def main():
