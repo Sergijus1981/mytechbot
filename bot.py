@@ -604,6 +604,14 @@ async def review_command(update, context):
             print(f"❌ Error sending {path}: {e}")
             await update.message.reply_text(f"❌ Could not send: {os.path.basename(path)}")
     await update.message.reply_text(t['review_done'])
+async def get_file_id(update, context):
+    if update.message.document:
+        file_id = update.message.document.file_id
+        await update.message.reply_text(f"`{file_id}`")
+    else:
+        await update.message.reply_text("Отправь мне файл (документ).")
+
+app.add_handler(MessageHandler(filters.Document.ALL, get_file_id))
 
 async def stats_command(update, context):
     user_id = update.effective_user.id
